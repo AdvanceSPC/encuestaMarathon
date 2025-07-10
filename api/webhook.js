@@ -15,12 +15,18 @@ const CONCEPT_LIMITS = {
 
 module.exports = async (req, res) => {
   try {
-    const { objectId } = req.body;
+    const objectId = req.body.objectId;
+    
+    console.log('Webhook recibido:', JSON.stringify(req.body, null, 2));
+    
     if (!objectId) {
-      return res.status(400).json({ error: 'Falta el ID del negocio (objectId)' });
+      console.error('ObjectId no encontrado en el webhook');
+      return res.status(400).json({ 
+        error: 'Falta el ID del negocio (objectId)',
+        receivedData: req.body 
+      });
     }
 
-    // 1. Obtener concepto desde HubSpot
     const hubspotRes = await axios.get(
       `https://api.hubapi.com/crm/v3/objects/deals/${objectId}?properties=concepto`,
       {
@@ -32,7 +38,11 @@ module.exports = async (req, res) => {
 
     const concepto = hubspotRes.data.properties?.concepto;
     if (!concepto || !CONCEPT_LIMITS[concepto.toUpperCase()]) {
-      return res.status(400).json({ error: 'Concepto no válido o no definido en el negocio' });
+      return res.status(400).json({ 
+        error: 'Concepto no válido o no definido en el negocio',
+        concepto: concepto,
+        availableConcepts: Object.keys(CONCEPT_LIMITS)
+      });
     }
 
     const limit = CONCEPT_LIMITS[concepto.toUpperCase()];
@@ -44,7 +54,6 @@ module.exports = async (req, res) => {
       database: process.env.DB_NAME
     });
 
-    // 2. Contar cuántos del mismo concepto ya tienen encuesta hoy
     const [rows] = await conn.execute(
       `SELECT COUNT(*) as total FROM registros 
        WHERE concepto = ? AND enviar_encuesta = 1 
@@ -55,14 +64,12 @@ module.exports = async (req, res) => {
     const usadosHoy = rows[0].total;
     const enviarEncuesta = usadosHoy < limit;
 
-    // 3. Insertar en registros
     await conn.execute(
       `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_creacion) 
        VALUES (?, ?, ?, NOW())`,
       [objectId, concepto, enviarEncuesta ? 1 : 0]
     );
 
-    // 4. Actualizar logs diarios
     await conn.execute(
       `INSERT INTO concepto_logs (concepto, cantidad_actual, limite, fecha_log)
        VALUES (?, 1, ?, CURDATE())
@@ -70,7 +77,6 @@ module.exports = async (req, res) => {
       [concepto, limit]
     );
 
-    // 5. Actualizar propiedad en HubSpot
     await axios.patch(
       `https://api.hubapi.com/crm/v3/objects/deals/${objectId}`,
       {
@@ -90,12 +96,19 @@ module.exports = async (req, res) => {
 
     res.json({
       success: true,
+      objectId,
       concepto,
-      enviar_encuesta: enviarEncuesta
+      enviar_encuesta: enviarEncuesta,
+      usados_hoy: usadosHoy,
+      limite: limit
     });
 
   } catch (err) {
     console.error('Error en webhook:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Error del servidor', detail: err.message });
+    res.status(500).json({ 
+      error: 'Error del servidor', 
+      detail: err.message,
+      stack: err.stack 
+    });
   }
 };
