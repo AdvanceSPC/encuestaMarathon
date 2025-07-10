@@ -19,7 +19,7 @@ module.exports = async (req, res) => {
         const objectId = webhookData.objectId;
 
         console.log('Webhook recibido:', JSON.stringify(req.body, null, 2));
-        console.log('Webhook data procesado:', JSON.stringify(webhookData, null, 2));
+        console.log('Webhook data procesado:', JSON.stringify(objectId, null, 2));
 
         if (!objectId) {
             console.error('ObjectId no encontrado en el webhook');
