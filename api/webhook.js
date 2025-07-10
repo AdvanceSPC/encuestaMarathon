@@ -15,16 +15,18 @@ const CONCEPT_LIMITS = {
 
 module.exports = async (req, res) => {
     try {
-        const rawBody = Array.isArray(req.body) ? req.body[0] : req.body;
-        const objectId = rawBody.objectId;
+        const webhookData = Array.isArray(req.body) ? req.body[0] : req.body;
+        const objectId = webhookData.objectId;
 
         console.log('Webhook recibido:', JSON.stringify(req.body, null, 2));
+        console.log('Webhook data procesado:', JSON.stringify(webhookData, null, 2));
 
         if (!objectId) {
             console.error('ObjectId no encontrado en el webhook');
             return res.status(400).json({
                 error: 'Falta el ID del negocio (objectId)',
-                receivedData: req.body
+                receivedData: req.body,
+                processedData: webhookData
             });
         }
 
