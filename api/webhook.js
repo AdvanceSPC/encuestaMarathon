@@ -39,6 +39,8 @@ module.exports = async (req, res) => {
             }
         );
 
+        console.log('Respuesta de HubSpot:', hubspotRes.data);
+
         const concepto = hubspotRes.data.properties?.concepto;
         if (!concepto || !CONCEPT_LIMITS[concepto.toUpperCase()]) {
             return res.status(400).json({
@@ -84,7 +86,7 @@ module.exports = async (req, res) => {
             `https://api.hubapi.com/crm/v3/objects/deals/${objectId}`,
             {
                 properties: {
-                    enviar_encuesta: enviarEncuesta ? 'Sí' : 'No'
+                    enviar_encuesta: enviarEncuesta ? 'SI' : 'NO'
                 }
             },
             {
