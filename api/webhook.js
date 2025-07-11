@@ -107,7 +107,7 @@ module.exports = async (req, res) => {
       resultados.push({ objectId, error: err.message });
     }
 
-    await sleep(200);
+    await sleep(6000);
   }
 
   await conn.end();
