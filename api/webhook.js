@@ -5,16 +5,21 @@ require('dotenv').config();
 const CONCEPT_LIMITS = {
   'MARATHON': 1000,
   'EXPLORER': 217,
-  'BODEGA': 252,
+  'BODEGAS DEPORTIVAS': 252,
   'OUTLET': 400,
   'TELESHOP': 197,
-  'PUMA': 59,
-  'TAF': 59,
-  'UNDERARMOUR': 20
+  'PUMA': 50,
+  'TAF': 50,
+  'TIENDA UNDER ARMOUR': 20
 };
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 module.exports = async (req, res) => {
   const eventos = Array.isArray(req.body) ? req.body : [req.body];
+  console.log('Webhook recibido:', JSON.stringify(eventos, null, 2));
 
   const conn = await mysql.createConnection({
     host: process.env.DB_HOST,
@@ -44,7 +49,7 @@ module.exports = async (req, res) => {
       const concepto = hubspotRes.data.properties?.concepto;
 
       if (!concepto) {
-        console.warn(`Negocio ${objectId} sin concepto aún.`);
+        console.warn(`Negocio ${objectId} sin concepto aún. Ignorando.`);
         resultados.push({ objectId, status: 'sin_concepto' });
         continue;
       }
@@ -83,7 +88,7 @@ module.exports = async (req, res) => {
         `https://api.hubapi.com/crm/v3/objects/deals/${objectId}`,
         {
           properties: {
-            enviar_encuesta: enviarEncuesta ? 'Sí' : 'No'
+            enviar_encuesta: enviarEncuesta ? 'SI' : 'NO'
           }
         },
         {
@@ -94,13 +99,15 @@ module.exports = async (req, res) => {
         }
       );
 
-      console.log(`Negocio ${objectId} actualizado. Concepto: ${concepto}, Encuesta: ${enviarEncuesta}`);
+      console.log(`Negocio ${objectId} actualizado → ${enviarEncuesta ? 'SI' : 'NO'}`);
       resultados.push({ objectId, concepto, enviar_encuesta: enviarEncuesta });
 
     } catch (err) {
       console.error(`Error al procesar ${objectId}:`, err.response?.data || err.message);
       resultados.push({ objectId, error: err.message });
     }
+
+    await sleep(200);
   }
 
   await conn.end();
