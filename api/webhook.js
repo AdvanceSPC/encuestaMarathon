@@ -8,25 +8,28 @@ const CONCEPT_LIMITS = {
   'BODEGAS DEPORTIVAS': 252,
   'OUTLET': 400,
   'TELESHOP': 197,
-  'PUMA': 50,
-  'TAF': 50,
-  'TIENDA UNDER ARMOUR': 20
+  'PUMA': 1300,
+  'TAF': 1300,
+  'TIENDA UNDER ARMOUR': 450
 };
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
 module.exports = async (req, res) => {
   const eventos = Array.isArray(req.body) ? req.body : [req.body];
   console.log('Webhook recibido:', JSON.stringify(eventos, null, 2));
-
-  const conn = await mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME
-  });
 
   const resultados = [];
 
@@ -34,8 +37,10 @@ module.exports = async (req, res) => {
     const objectId = evento.objectId;
     if (!objectId) continue;
 
+    let conn;
     try {
-      console.log(`Procesando negocio: ${objectId}`);
+      console.log(`🔁 Procesando negocio: ${objectId}`);
+      conn = await pool.getConnection();
 
       const hubspotRes = await axios.get(
         `https://api.hubapi.com/crm/v3/objects/deals/${objectId}?properties=concepto`,
@@ -49,8 +54,9 @@ module.exports = async (req, res) => {
       const concepto = hubspotRes.data.properties?.concepto;
 
       if (!concepto) {
-        console.warn(`Negocio ${objectId} sin concepto aún. Ignorando.`);
+        console.warn(`Negocio ${objectId} sin concepto definido aún. Ignorando.`);
         resultados.push({ objectId, status: 'sin_concepto' });
+        conn.release();
         continue;
       }
 
@@ -58,6 +64,7 @@ module.exports = async (req, res) => {
       if (!limite) {
         console.warn(`Concepto no reconocido: ${concepto}`);
         resultados.push({ objectId, concepto, status: 'concepto_no_valido' });
+        conn.release();
         continue;
       }
 
@@ -101,16 +108,15 @@ module.exports = async (req, res) => {
 
       console.log(`Negocio ${objectId} actualizado → ${enviarEncuesta ? 'SI' : 'NO'}`);
       resultados.push({ objectId, concepto, enviar_encuesta: enviarEncuesta });
-
     } catch (err) {
       console.error(`Error al procesar ${objectId}:`, err.response?.data || err.message);
       resultados.push({ objectId, error: err.message });
+    } finally {
+      if (conn) conn.release();
     }
 
     await sleep(6000);
   }
-
-  await conn.end();
 
   res.status(200).json({
     processed: resultados.length,
