@@ -75,12 +75,12 @@ module.exports = async (req, res) => {
             [objectId, concepto, enviarEncuesta ? 1 : 0]
         );
 
-        /*await conn.execute(
+        await conn.execute(
             `INSERT INTO concepto_logs (concepto, cantidad_actual, limite, fecha_log)
        VALUES (?, 1, ?, CURDATE())
        ON DUPLICATE KEY UPDATE cantidad_actual = cantidad_actual + 1`,
             [concepto, limit]
-        );*/
+        );
 
         await axios.patch(
             `https://api.hubapi.com/crm/v3/objects/deals/${objectId}`,
