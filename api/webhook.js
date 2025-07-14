@@ -39,7 +39,7 @@ module.exports = async (req, res) => {
 
     let conn;
     try {
-      console.log(`🔁 Procesando negocio: ${objectId}`);
+      console.log(`Procesando negocio: ${objectId}`);
       conn = await pool.getConnection();
 
       const hubspotRes = await axios.get(
@@ -131,7 +131,7 @@ module.exports = async (req, res) => {
       if (conn) conn.release();
     }
 
-    await sleep(6000);
+    await sleep(8000);
   }
 
   res.status(200).json({
