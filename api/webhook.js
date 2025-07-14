@@ -131,7 +131,7 @@ module.exports = async (req, res) => {
       if (conn) conn.release();
     }
 
-    await sleep(8000);
+    await sleep(7000);
   }
 
   res.status(200).json({
