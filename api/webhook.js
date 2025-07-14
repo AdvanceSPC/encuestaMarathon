@@ -4,13 +4,13 @@ require('dotenv').config();
 
 const CONCEPT_LIMITS = {
   'MARATHON': 1000,
-  'EXPLORER': 2387,
-  'BODEGAS DEPORTIVAS': 2772,
-  'OUTLET': 4400,
-  'TELESHOP': 2167,
-  'PUMA': 473,
-  'TAF': 473,
-  'TIENDA UNDER ARMOUR': 165
+  'EXPLORER': 217,
+  'BODEGAS DEPORTIVAS': 252,
+  'OUTLET': 400,
+  'TELESHOP': 197,
+  'PUMA': 43,
+  'TAF': 43,
+  'TIENDA UNDER ARMOUR': 15
 };
 
 function sleep(ms) {
@@ -39,7 +39,7 @@ module.exports = async (req, res) => {
 
     let conn;
     try {
-      console.log(`Procesando negocio: ${objectId}`);
+      console.log(`🔁 Procesando negocio: ${objectId}`);
       conn = await pool.getConnection();
 
       const hubspotRes = await axios.get(
@@ -53,7 +53,13 @@ module.exports = async (req, res) => {
 
       const concepto = hubspotRes.data.properties?.concepto;
       const closedateRaw = hubspotRes.data.properties?.closedate;
-      const fechaCierre = closedateRaw ? new Date(closedateRaw) : null;
+      const fechaCierre = closedateRaw && !isNaN(Date.parse(closedateRaw))
+        ? new Date(closedateRaw)
+        : null;
+
+      const fechaControl = fechaCierre
+        ? fechaCierre.toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0];
 
       if (!concepto) {
         console.warn(`Negocio ${objectId} sin concepto definido aún. Ignorando.`);
@@ -73,24 +79,25 @@ module.exports = async (req, res) => {
       const [rows] = await conn.execute(
         `SELECT COUNT(*) as total FROM registros 
          WHERE concepto = ? AND enviar_encuesta = 1 
-         AND DATE(fecha_creacion) = CURDATE()`,
-        [concepto]
+         AND DATE(fecha_cierre) = ?`,
+        [concepto, fechaControl]
       );
 
       const usadosHoy = rows[0].total;
       const enviarEncuesta = usadosHoy < limite;
+      const enviarEncuestaFlag = enviarEncuesta ? 1 : 0;
 
       await conn.execute(
-        `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_cierre, fecha_creacion) 
-         VALUES (?, ?, ?, ?, NOW())`,
-        [objectId, concepto, fechaCierre, enviarEncuesta ? 1 : 0]
+        `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre) 
+         VALUES (?, ?, ?, NOW(), ?)`,
+        [objectId, concepto, enviarEncuestaFlag, fechaCierre]
       );
 
       await conn.execute(
         `INSERT INTO concepto_logs (concepto, cantidad_actual, limite, fecha_log)
-         VALUES (?, 1, ?, CURDATE())
+         VALUES (?, 1, ?, ?)
          ON DUPLICATE KEY UPDATE cantidad_actual = cantidad_actual + 1`,
-        [concepto, limite]
+        [concepto, limite, fechaControl]
       );
 
       await axios.patch(
@@ -109,10 +116,17 @@ module.exports = async (req, res) => {
       );
 
       console.log(`Negocio ${objectId} actualizado → ${enviarEncuesta ? 'SI' : 'NO'}`);
-      resultados.push({ objectId, concepto, enviar_encuesta: enviarEncuesta });
+      resultados.push({ objectId, concepto, enviar_encuesta: enviarEncuesta, fechaControl });
+
     } catch (err) {
-      console.error(`Error al procesar ${objectId}:`, err.response?.data || err.message);
-      resultados.push({ objectId, error: err.message });
+      const status = err.response?.status;
+      if (status === 404) {
+        console.warn(`Negocio ${objectId} no encontrado (404). Puede haber sido eliminado.`);
+        resultados.push({ objectId, status: 404, error: 'No encontrado en HubSpot' });
+      } else {
+        console.error(`Error al procesar ${objectId}:`, err.response?.data || err.message);
+        resultados.push({ objectId, error: err.message });
+      }
     } finally {
       if (conn) conn.release();
     }
