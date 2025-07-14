@@ -82,7 +82,7 @@ module.exports = async (req, res) => {
 
       await conn.execute(
         `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_cierre, fecha_creacion) 
-         VALUES (?, ?, ?, NOW())`,
+         VALUES (?, ?, ?, ?, NOW())`,
         [objectId, concepto, fechaCierre, enviarEncuesta ? 1 : 0]
       );
 
