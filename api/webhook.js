@@ -4,13 +4,13 @@ require('dotenv').config();
 
 const CONCEPT_LIMITS = {
   'MARATHON': 1000,
-  'EXPLORER': 217,
-  'BODEGAS DEPORTIVAS': 252,
-  'OUTLET': 400,
-  'TELESHOP': 197,
-  'PUMA': 1300,
-  'TAF': 1300,
-  'TIENDA UNDER ARMOUR': 450
+  'EXPLORER': 2387,
+  'BODEGAS DEPORTIVAS': 2772,
+  'OUTLET': 4400,
+  'TELESHOP': 2167,
+  'PUMA': 473,
+  'TAF': 473,
+  'TIENDA UNDER ARMOUR': 165
 };
 
 function sleep(ms) {
@@ -39,11 +39,11 @@ module.exports = async (req, res) => {
 
     let conn;
     try {
-      console.log(`🔁 Procesando negocio: ${objectId}`);
+      console.log(`Procesando negocio: ${objectId}`);
       conn = await pool.getConnection();
 
       const hubspotRes = await axios.get(
-        `https://api.hubapi.com/crm/v3/objects/deals/${objectId}?properties=concepto`,
+        `https://api.hubapi.com/crm/v3/objects/deals/${objectId}?properties=concepto,closedate`,
         {
           headers: {
             Authorization: `Bearer ${process.env.HUBSPOT_TOKEN}`
@@ -52,6 +52,8 @@ module.exports = async (req, res) => {
       );
 
       const concepto = hubspotRes.data.properties?.concepto;
+      const closedateRaw = hubspotRes.data.properties?.closedate;
+      const fechaCierre = closedateRaw ? new Date(closedateRaw) : null;
 
       if (!concepto) {
         console.warn(`Negocio ${objectId} sin concepto definido aún. Ignorando.`);
@@ -79,9 +81,9 @@ module.exports = async (req, res) => {
       const enviarEncuesta = usadosHoy < limite;
 
       await conn.execute(
-        `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_creacion) 
+        `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_cierre, fecha_creacion) 
          VALUES (?, ?, ?, NOW())`,
-        [objectId, concepto, enviarEncuesta ? 1 : 0]
+        [objectId, concepto, fechaCierre, enviarEncuesta ? 1 : 0]
       );
 
       await conn.execute(
