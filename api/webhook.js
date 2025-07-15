@@ -34,8 +34,18 @@ module.exports = async (req, res) => {
   const resultados = [];
 
   for (const evento of eventos) {
-    const objectId = evento.objectId;
-    if (!objectId) continue;
+    const objectId = evento.object?.properties?.hs_object_id;
+    const closedateRaw = evento.object?.properties?.closedate;
+
+    const fechaCierre = closedateRaw && !isNaN(Number(closedateRaw))
+      ? new Date(Number(closedateRaw))
+      : null;
+
+    if (!objectId) {
+      console.warn('Evento sin hs_object_id. Ignorado.');
+      resultados.push({ status: 'sin_id', raw: evento });
+      continue;
+    }
 
     let conn;
     try {
@@ -43,7 +53,7 @@ module.exports = async (req, res) => {
       conn = await pool.getConnection();
 
       const hubspotRes = await axios.get(
-        `https://api.hubapi.com/crm/v3/objects/deals/${objectId}?properties=concepto,closedate`,
+        `https://api.hubapi.com/crm/v3/objects/deals/${objectId}?properties=concepto`,
         {
           headers: {
             Authorization: `Bearer ${process.env.HUBSPOT_TOKEN}`
@@ -52,10 +62,6 @@ module.exports = async (req, res) => {
       );
 
       const concepto = hubspotRes.data.properties?.concepto;
-      const closedateRaw = hubspotRes.data.properties?.closedate;
-      const fechaCierre = closedateRaw && !isNaN(Date.parse(closedateRaw))
-        ? new Date(closedateRaw)
-        : null;
 
       const fechaControl = fechaCierre
         ? fechaCierre.toISOString().split('T')[0]
@@ -131,7 +137,7 @@ module.exports = async (req, res) => {
       if (conn) conn.release();
     }
 
-    await sleep(7000);
+    await sleep(6000);
   }
 
   res.status(200).json({
