@@ -159,7 +159,7 @@ module.exports = async (req, res) => {
       if (conn) conn.release();
     }
 
-    await sleep(7500);
+    await sleep(8000);
   }
 
   res.status(200).json({
