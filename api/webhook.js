@@ -3,14 +3,14 @@ const axios = require('axios');
 require('dotenv').config();
 
 const CONCEPT_LIMITS = {
-  'MARATHON': 10500,
-  'EXPLORER': 2510,
-  'BODEGAS DEPORTIVAS': 2500,
-  'OUTLET': 4820,
-  'TELESHOP': 3900,
-  'PUMA': 656,
-  'TAF': 645,
-  'TIENDA UNDER ARMOUR': 225
+  'MARATHON': 1000,
+  'EXPLORER': 217,
+  'BODEGAS DEPORTIVAS': 252,
+  'OUTLET': 400,
+  'TELESHOP': 197,
+  'PUMA': 43,
+  'TAF': 43,
+  'TIENDA UNDER ARMOUR': 15
 };
 
 function sleep(ms) {
