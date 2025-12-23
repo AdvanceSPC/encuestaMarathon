@@ -48,7 +48,7 @@ module.exports = async (req, res) => {
       );
 
       if (existingRows.length > 0) {
-        console.log(`Negocio ${objectId} ya existe en la base de datos. Ignorando duplicado.`);
+        console.log(`Negocio ${objectId} ya existe. Ignorando duplicado.`);
         resultados.push({ 
           objectId, 
           status: 'duplicado_ignorado',
@@ -63,9 +63,7 @@ module.exports = async (req, res) => {
       const hubspotRes = await axios.get(
         `https://api.hubapi.com/crm/v3/objects/deals/${objectId}?properties=concepto,closedate`,
         {
-          headers: {
-            Authorization: `Bearer ${process.env.HUBSPOT_TOKEN}`
-          }
+          headers: { Authorization: `Bearer ${process.env.HUBSPOT_TOKEN}` }
         }
       );
 
@@ -80,7 +78,7 @@ module.exports = async (req, res) => {
         : new Date().toISOString().split('T')[0];
 
       if (!concepto) {
-        console.warn(`Negocio ${objectId} sin concepto definido aún. Ignorando.`);
+        console.warn(`Negocio ${objectId} sin concepto definido. Ignorando.`);
         resultados.push({ objectId, status: 'sin_concepto' });
         conn.release();
         continue;
@@ -94,6 +92,31 @@ module.exports = async (req, res) => {
         continue;
       }
 
+      const asociacionesRes = await axios.get(
+        `https://api.hubapi.com/crm/v4/objects/deals/${objectId}/associations/contacts`,
+        {
+          headers: { Authorization: `Bearer ${process.env.HUBSPOT_TOKEN}` }
+        }
+      );
+
+      const contactoId = asociacionesRes.data.results?.[0]?.toObjectId;
+      if (!contactoId) {
+        console.warn(`Negocio ${objectId} sin contacto asociado. Ignorando.`);
+        resultados.push({ objectId, status: 'sin_contacto' });
+        conn.release();
+        continue;
+      }
+
+      const [contactoEncuesta] = await conn.execute(
+        `SELECT COUNT(*) as total 
+         FROM registros 
+         WHERE contacto_id = ? 
+           AND enviar_encuesta = 1 
+           AND DATE(fecha_cierre) = ?`,
+        [contactoId, fechaControl]
+      );
+      const yaEncuestadoHoy = contactoEncuesta[0].total > 0;
+
       const [rows] = await conn.execute(
         `SELECT COUNT(*) as total FROM registros 
          WHERE concepto = ? AND enviar_encuesta = 1 
@@ -102,14 +125,14 @@ module.exports = async (req, res) => {
       );
 
       const usadosHoy = rows[0].total;
-      const enviarEncuesta = usadosHoy < limite;
+      const enviarEncuesta = usadosHoy < limite && !yaEncuestadoHoy;
       const enviarEncuestaFlag = enviarEncuesta ? 1 : 0;
 
       try {
         await conn.execute(
-          `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre) 
-           VALUES (?, ?, ?, NOW(), ?)`,
-          [objectId, concepto, enviarEncuestaFlag, fechaCierre]
+          `INSERT INTO registros (id, contacto_id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre) 
+           VALUES (?, ?, ?, ?, NOW(), ?)`,
+          [objectId, contactoId, concepto, enviarEncuestaFlag, fechaCierre]
         );
 
         await conn.execute(
@@ -135,11 +158,17 @@ module.exports = async (req, res) => {
         );
 
         console.log(`Negocio ${objectId} actualizado → ${enviarEncuesta ? 'SI' : 'NO'}`);
-        resultados.push({ objectId, concepto, enviar_encuesta: enviarEncuesta, fechaControl });
+        resultados.push({ 
+          objectId, 
+          contactoId, 
+          concepto, 
+          enviar_encuesta: enviarEncuesta, 
+          fechaControl 
+        });
 
       } catch (insertError) {
         if (insertError.code === 'ER_DUP_ENTRY') {
-          console.log(`Negocio ${objectId} - Error de duplicado en INSERT. Ignorando.`);
+          console.log(`Negocio ${objectId} - Duplicado en INSERT. Ignorando.`);
           resultados.push({ objectId, status: 'duplicado_en_insert' });
         } else {
           throw insertError;
@@ -149,7 +178,7 @@ module.exports = async (req, res) => {
     } catch (err) {
       const status = err.response?.status;
       if (status === 404) {
-        console.warn(`Negocio ${objectId} no encontrado (404). Puede haber sido eliminado.`);
+        console.warn(`Negocio ${objectId} no encontrado (404).`);
         resultados.push({ objectId, status: 404, error: 'No encontrado en HubSpot' });
       } else {
         console.error(`Error al procesar ${objectId}:`, err.response?.data || err.message);
