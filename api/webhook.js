@@ -70,7 +70,7 @@ async function procesarNegocio(objectId) {
 
     const [contactoEncuesta] = await conn.execute(
       `SELECT COUNT(*) as total FROM registros
-       WHERE contacto_id = ? AND DATE(fecha_cierre) = ? AND enviar_encuesta = 1`,
+       WHERE contact_id = ? AND DATE(fecha_cierre) = ? AND enviar_encuesta = 1`,
       [contactoId, fechaControl]
     );
     const yaEncuestadoHoy = contactoEncuesta[0].total > 0;
@@ -85,7 +85,7 @@ async function procesarNegocio(objectId) {
     const enviarEncuesta = usadosHoy < limite && !yaEncuestadoHoy;
 
     await conn.execute(
-      `INSERT INTO registros (id, contacto_id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre)
+      `INSERT INTO registros (id, contact_id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre)
        VALUES (?, ?, ?, ?, NOW(), ?)`,
       [objectId, contactoId, concepto, enviarEncuesta ? 1 : 0, fechaCierre]
     );
