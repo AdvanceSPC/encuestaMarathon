@@ -110,7 +110,7 @@ module.exports = async (req, res) => {
       const [contactoEncuesta] = await conn.execute(
         `SELECT COUNT(*) as total 
          FROM registros 
-         WHERE contacto_id = ? 
+         WHERE contact_id = ? 
            AND enviar_encuesta = 1 
            AND DATE(fecha_cierre) = ?`,
         [contactoId, fechaControl]
@@ -130,7 +130,7 @@ module.exports = async (req, res) => {
 
       try {
         await conn.execute(
-          `INSERT INTO registros (id, contacto_id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre) 
+          `INSERT INTO registros (id, contact_id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre) 
            VALUES (?, ?, ?, ?, NOW(), ?)`,
           [objectId, contactoId, concepto, enviarEncuestaFlag, fechaCierre]
         );
