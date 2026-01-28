@@ -23,9 +23,60 @@ const pool = mysql.createPool({
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: 25,
+  connectionLimit: 10,
   queueLimit: 0
 });
+
+// Función para obtener el contacto asociado al negocio
+async function obtenerContactoDelNegocio(objectId, token) {
+  try {
+    const response = await axios.get(
+      `https://api.hubapi.com/crm/v3/objects/deals/${objectId}/associations/contacts`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+    
+    // Retorna el primer contacto asociado (o null si no hay)
+    return response.data.results?.[0]?.id || null;
+  } catch (error) {
+    console.error(`Error obteniendo contacto del negocio ${objectId}:`, error.message);
+    return null;
+  }
+}
+
+// Función para verificar si el contacto ya recibió encuesta hoy
+async function contactoRecibiEncuestaHoy(contactId, token, fechaControl) {
+  try {
+    const response = await axios.get(
+      `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=fechaMail`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+    
+    const fechaMail = response.data.properties?.fechaMail;
+    
+    if (!fechaMail) {
+      return false; // No tiene fecha registrada, nunca ha recibido encuesta
+    }
+    
+    // Convertir fechaMail a formato de fecha
+    const fechaMailDate = new Date(fechaMail);
+    const fechaMailControl = fechaMailDate.toISOString().split('T')[0];
+    
+    // Comparar si es la misma fecha
+    return fechaMailControl === fechaControl;
+    
+  } catch (error) {
+    console.error(`Error verificando fechaMail del contacto ${contactId}:`, error.message);
+    return false; // En caso de error, permitir el envío
+  }
+}
 
 module.exports = async (req, res) => {
   const eventos = Array.isArray(req.body) ? req.body : [req.body];
@@ -94,6 +145,59 @@ module.exports = async (req, res) => {
         continue;
       }
 
+      // NUEVA VALIDACIÓN: Obtener el contacto asociado al negocio
+      const contactId = await obtenerContactoDelNegocio(objectId, process.env.HUBSPOT_TOKEN);
+      
+      if (!contactId) {
+        console.warn(`Negocio ${objectId} no tiene contacto asociado. Ignorando.`);
+        resultados.push({ objectId, concepto, status: 'sin_contacto_asociado' });
+        conn.release();
+        continue;
+      }
+
+      // NUEVA VALIDACIÓN: Verificar si el contacto ya recibió encuesta hoy
+      const yaRecibiEncuestaHoy = await contactoRecibiEncuestaHoy(contactId, process.env.HUBSPOT_TOKEN, fechaControl);
+      
+      if (yaRecibiEncuestaHoy) {
+        console.log(`Contacto ${contactId} ya recibió encuesta hoy (${fechaControl}). Negocio ${objectId} marcado como NO enviar.`);
+        
+        // Registrar en BD pero marcar como NO enviar
+        await conn.execute(
+          `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre, contacto_id, razon_no_envio) 
+           VALUES (?, ?, 0, NOW(), ?, ?, 'contacto_ya_recibio_encuesta_hoy')`,
+          [objectId, concepto, fechaCierre, contactId]
+        );
+
+        // Actualizar HubSpot con NO
+        await axios.patch(
+          `https://api.hubapi.com/crm/v3/objects/deals/${objectId}`,
+          {
+            properties: {
+              enviar_encuesta: 'NO'
+            }
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.HUBSPOT_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        resultados.push({ 
+          objectId, 
+          concepto, 
+          contacto_id: contactId,
+          enviar_encuesta: false, 
+          razon: 'contacto_ya_recibio_encuesta_hoy',
+          fechaControl 
+        });
+        
+        conn.release();
+        continue;
+      }
+
+      // Validación del límite del concepto (lógica original)
       const [rows] = await conn.execute(
         `SELECT COUNT(*) as total FROM registros 
          WHERE concepto = ? AND enviar_encuesta = 1 
@@ -107,9 +211,9 @@ module.exports = async (req, res) => {
 
       try {
         await conn.execute(
-          `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre) 
-           VALUES (?, ?, ?, NOW(), ?)`,
-          [objectId, concepto, enviarEncuestaFlag, fechaCierre]
+          `INSERT INTO registros (id, concepto, enviar_encuesta, fecha_creacion, fecha_cierre, contacto_id) 
+           VALUES (?, ?, ?, NOW(), ?, ?)`,
+          [objectId, concepto, enviarEncuestaFlag, fechaCierre, contactId]
         );
 
         await conn.execute(
@@ -134,8 +238,14 @@ module.exports = async (req, res) => {
           }
         );
 
-        console.log(`Negocio ${objectId} actualizado → ${enviarEncuesta ? 'SI' : 'NO'}`);
-        resultados.push({ objectId, concepto, enviar_encuesta: enviarEncuesta, fechaControl });
+        console.log(`Negocio ${objectId} (Contacto: ${contactId}) actualizado → ${enviarEncuesta ? 'SI' : 'NO'}`);
+        resultados.push({ 
+          objectId, 
+          concepto, 
+          contacto_id: contactId,
+          enviar_encuesta: enviarEncuesta, 
+          fechaControl 
+        });
 
       } catch (insertError) {
         if (insertError.code === 'ER_DUP_ENTRY') {
