@@ -51,7 +51,7 @@ async function obtenerContactoDelNegocio(objectId, token) {
 async function contactoRecibiEncuestaHoy(contactId, token, fechaControl) {
   try {
     const response = await axios.get(
-      `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=fechaMail`,
+      `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=fechamail`,
       {
         headers: {
           Authorization: `Bearer ${token}`
@@ -59,21 +59,21 @@ async function contactoRecibiEncuestaHoy(contactId, token, fechaControl) {
       }
     );
     
-    const fechaMail = response.data.properties?.fechaMail;
+    const fechamail = response.data.properties?.fechamail;
     
-    if (!fechaMail) {
+    if (!fechamail) {
       return false; // No tiene fecha registrada, nunca ha recibido encuesta
     }
     
-    // Convertir fechaMail a formato de fecha
-    const fechaMailDate = new Date(fechaMail);
-    const fechaMailControl = fechaMailDate.toISOString().split('T')[0];
+    // Convertir fechamail a formato de fecha
+    const fechamailDate = new Date(fechamail);
+    const fechamailControl = fechamailDate.toISOString().split('T')[0];
     
     // Comparar si es la misma fecha
-    return fechaMailControl === fechaControl;
+    return fechamailControl === fechaControl;
     
   } catch (error) {
-    console.error(`Error verificando fechaMail del contacto ${contactId}:`, error.message);
+    console.error(`Error verificando fechamail del contacto ${contactId}:`, error.message);
     return false; // En caso de error, permitir el envío
   }
 }
